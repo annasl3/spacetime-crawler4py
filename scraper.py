@@ -17,6 +17,14 @@ LARGE_PAGE_MIN_WORDS = 500
 MAX_URL_LENGTH = 250
 MAX_PATH_DEPTH = 12
 
+# calendar style paths: classic infinite traps.
+CALENDAR_RE = re.compile(
+    r"(/\d{4}-\d{2}(-\d{2})?(/|$))"            # /2024-05 or /2024-05-17
+    r"|(/\d{4}/\d{1,2}(/\d{1,2})?(/|$))"       # /2024/05/17
+    r"|calendar|/ical(/|$)|\.ical"
+    r"|/events?/(list|month|day|week|today)"
+    r"|/(day|week|month)/\d")
+
 analytics = Analytics()
 atexit.register(analytics.flush)
 
@@ -123,6 +131,9 @@ def is_valid(url):
             return False
 
         if len(segments) > MAX_PATH_DEPTH:
+            return False
+
+        if CALENDAR_RE.search(path):
             return False
 
         return not re.match(
