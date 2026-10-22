@@ -15,6 +15,7 @@ LARGE_PAGE_BYTES = 1024 * 1024        # a 1 MB+ page with little text is junk
 LARGE_PAGE_MIN_WORDS = 500
 
 MAX_URL_LENGTH = 250
+MAX_PATH_DEPTH = 12
 
 analytics = Analytics()
 atexit.register(analytics.flush)
@@ -119,6 +120,9 @@ def is_valid(url):
         if segments and max(Counter(segments).values()) >= 3:
             return False
         if re.search(r"(/[^/]+?)\1{2,}", path):
+            return False
+
+        if len(segments) > MAX_PATH_DEPTH:
             return False
 
         return not re.match(
