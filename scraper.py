@@ -9,6 +9,10 @@ ALLOWED_DOMAINS = ("ics.uci.edu", "cs.uci.edu",
 
 MAX_CONTENT_BYTES = 5 * 1024 * 1024   # skip pages larger than 5 MB
 
+MIN_WORDS = 50                        # fewer words = low information page
+LARGE_PAGE_BYTES = 1024 * 1024        # a 1 MB+ page with little text is junk
+LARGE_PAGE_MIN_WORDS = 500
+
 analytics = Analytics()
 atexit.register(analytics.flush)
 
@@ -56,6 +60,13 @@ def extract_next_links(url, resp):
     # record the page for the report (unique by defragmented URL)
     if not analytics.record_page(final_url, tokens):
         return []     # already processed (e.g. reached through a redirect)
+
+    # low information value: too few words, or a big file with little text.
+    # the page is still recorded above, but we don't follow its links.
+    if len(tokens) < MIN_WORDS:
+        return []
+    if len(raw.content) > LARGE_PAGE_BYTES and len(tokens) < LARGE_PAGE_MIN_WORDS:
+        return []
 
     return links
 
