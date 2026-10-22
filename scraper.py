@@ -5,6 +5,8 @@ from bs4 import BeautifulSoup
 ALLOWED_DOMAINS = ("ics.uci.edu", "cs.uci.edu", 
                    "informatics.uci.edu", "stat.uci.edu")
 
+MAX_CONTENT_BYTES = 5 * 1024 * 1024   # skip pages larger than 5 MB
+
 def scraper(url, resp):
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
@@ -19,12 +21,26 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    if resp is None or resp.status != 200 or resp.raw_response is None:
+    if resp is None or resp.status != 200:
+        return []
+    raw = resp.raw_response
+    if raw is None or not raw.content:
+        return []
+    if len(raw.content) > MAX_CONTENT_BYTES:
         return []
 
-    base = urldefrag(resp.raw_response.url or url)[0]
-    soup = BeautifulSoup(resp.raw_response.content, "lxml")
-    return _collect_links(soup, base)
+    # skip non-HTML content types when the header is present
+    ctype = (getattr(raw, "headers", None) or {}).get("Content-Type", "")
+    if ctype and "html" not in ctype.lower():
+        return []
+
+    final_url = urldefrag(raw.url or url)[0]
+    try:
+        soup = BeautifulSoup(raw.content, "lxml")
+    except Exception:
+        return []
+
+    return _collect_links(soup, final_url)
 
 def _collect_links(soup, base_url):
     # resolve every <a href> against base_url, defragment, de-duplicate
