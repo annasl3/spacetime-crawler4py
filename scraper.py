@@ -1,5 +1,6 @@
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin, urldefrag
+from bs4 import BeautifulSoup
 
 ALLOWED_DOMAINS = ("ics.uci.edu", "cs.uci.edu", 
                    "informatics.uci.edu", "stat.uci.edu")
@@ -18,7 +19,29 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    return list()
+    if resp is None or resp.status != 200 or resp.raw_response is None:
+        return []
+
+    base = urldefrag(resp.raw_response.url or url)[0]
+    soup = BeautifulSoup(resp.raw_response.content, "lxml")
+    return _collect_links(soup, base)
+
+def _collect_links(soup, base_url):
+    # resolve every <a href> against base_url, defragment, de-duplicate
+    seen, links = set(), []
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if not href or href.lower().startswith(("mailto:", "javascript:", 
+                                                "tel:", "data:")):
+            continue
+        try:
+            absolute = urldefrag(urljoin(base_url, href))[0]
+        except ValueError:
+            continue
+        if absolute not in seen:
+            seen.add(absolute)
+            links.append(absolute)
+    return links
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -32,6 +55,8 @@ def is_valid(url):
         host = (parsed.hostname or "").lower()
         if not any(host == d or host.endswith("." + d) for d in ALLOWED_DOMAINS):
             return False
+
+        # trap checks before the return
         
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
@@ -42,10 +67,6 @@ def is_valid(url):
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
-
-    #except TypeError:
-        #print ("TypeError for ", parsed)
-        #raise
 
     except (TypeError, ValueError):
         return False
