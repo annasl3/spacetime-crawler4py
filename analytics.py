@@ -22,6 +22,7 @@ class Analytics:
         self.seen_urls = set()
         self.longest_url = None
         self.longest_word_count = 0
+        self.word_frequencies = {}
 
     def record_page(self, url, tokens):
         """Record a new page; return False if its URL was recorded."""
@@ -36,5 +37,11 @@ class Analytics:
         if word_count > self.longest_word_count:
             self.longest_url = url
             self.longest_word_count = word_count
+
+        for token in tokens:
+            if token in self.word_frequencies:
+                self.word_frequencies[token] += 1
+            else:
+                self.word_frequencies[token] = 1
 
         return True
