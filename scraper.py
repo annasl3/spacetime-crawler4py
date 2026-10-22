@@ -1,11 +1,16 @@
 import re
+import atexit
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
+from analytics import Analytics, tokenize
 
 ALLOWED_DOMAINS = ("ics.uci.edu", "cs.uci.edu", 
                    "informatics.uci.edu", "stat.uci.edu")
 
 MAX_CONTENT_BYTES = 5 * 1024 * 1024   # skip pages larger than 5 MB
+
+analytics = Analytics()
+atexit.register(analytics.flush)
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -40,7 +45,19 @@ def extract_next_links(url, resp):
     except Exception:
         return []
 
-    return _collect_links(soup, final_url)
+    # collect links before stripping tags from the soup
+    links = _collect_links(soup, final_url)
+
+    # visible text only: drop scripts/styles so code is not counted as words
+    for tag in soup(["script", "style", "noscript", "template"]):
+        tag.decompose()
+    tokens = tokenize(soup.get_text(" ", strip=True))
+
+    # record the page for the report (unique by defragmented URL)
+    if not analytics.record_page(final_url, tokens):
+        return []     # already processed (e.g. reached through a redirect)
+
+    return links
 
 def _collect_links(soup, base_url):
     # resolve every <a href> against base_url, defragment, de-duplicate
