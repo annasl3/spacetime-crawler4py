@@ -13,6 +13,8 @@ MIN_WORDS = 50                        # fewer words = low information page
 LARGE_PAGE_BYTES = 1024 * 1024        # a 1 MB+ page with little text is junk
 LARGE_PAGE_MIN_WORDS = 500
 
+MAX_URL_LENGTH = 250
+
 analytics = Analytics()
 atexit.register(analytics.flush)
 
@@ -92,6 +94,13 @@ def is_valid(url):
     # If you decide to crawl it, return True; otherwise return False.
     # There are already some conditions that return False.
     try:
+        # must receive plain ASCII URLs 
+        if not url.isascii() or any(c.isspace() for c in url):
+            return False
+        if len(url) > MAX_URL_LENGTH:
+            return False
+        
+        
         parsed = urlparse(url)
         if parsed.scheme not in set(["http", "https"]):
             return False
