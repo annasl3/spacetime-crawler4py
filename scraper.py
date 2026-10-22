@@ -3,6 +3,7 @@ import atexit
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 from analytics import Analytics, tokenize
+from collections import Counter
 
 ALLOWED_DOMAINS = ("ics.uci.edu", "cs.uci.edu", 
                    "informatics.uci.edu", "stat.uci.edu")
@@ -110,7 +111,16 @@ def is_valid(url):
             return False
 
         # trap checks before the return
-        
+        path = parsed.path.lower()
+
+        # A segment repeated 3+ times, or a repeating pattern, is a loop
+        # (typically a relative link that keeps appending to the path).
+        segments = [s for s in path.split("/") if s]
+        if segments and max(Counter(segments).values()) >= 3:
+            return False
+        if re.search(r"(/[^/]+?)\1{2,}", path):
+            return False
+
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -119,7 +129,7 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", path)
 
     except (TypeError, ValueError):
         return False
