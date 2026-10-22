@@ -1,6 +1,6 @@
 import re
 import atexit
-from urllib.parse import urlparse, urljoin, urldefrag
+from urllib.parse import urlparse, urljoin, urldefrag, parse_qs
 from bs4 import BeautifulSoup
 from analytics import Analytics, tokenize
 from collections import Counter
@@ -24,6 +24,15 @@ CALENDAR_RE = re.compile(
     r"|calendar|/ical(/|$)|\.ical"
     r"|/events?/(list|month|day|week|today)"
     r"|/(day|week|month)/\d")
+
+# query parameters that produce duplicate, useless or infinite page variants.
+BAD_QUERY_KEYS = {
+    "action", "do", "share", "replytocom", "ical", "outlook-ical",
+    "tribe-bar-date", "eventdisplay", "eventdate", "sessionid", "phpsessid",
+    "sid", "rev", "idx", "difftype", "tab_details", "tab_files", "image",
+    "format", "print", "sort", "order", "filter", "login", "logout",
+}
+MAX_QUERY_PARAMS = 6
 
 analytics = Analytics()
 atexit.register(analytics.flush)
@@ -135,6 +144,13 @@ def is_valid(url):
 
         if CALENDAR_RE.search(path):
             return False
+
+        if parsed.query:
+            params = parse_qs(parsed.query, keep_blank_values=True)
+            if len(params) > MAX_QUERY_PARAMS:
+                return False
+            if any(k.lower() in BAD_QUERY_KEYS for k in params):
+                return False
 
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
