@@ -119,3 +119,25 @@ class Analytics:
         self.longest_word_count = data["longest_word_count"]
         self.word_frequencies = data["word_frequencies"]
         self.subdomain_counts = data["subdomain_counts"]
+
+    def top_words(self, stop_words, limit=50):
+        """Return the most frequent words, excluding stop words."""
+        words = []
+
+        with self._lock:
+            for word, count in self.word_frequencies.items():
+                if word not in stop_words:
+                    words.append((word, count))
+
+        words.sort(key=lambda item: (-item[1], item[0]))
+        return words[:limit]
+
+    def subdomain_lines(self):
+        """Return ICS subdomain URLs and counts in alphabetical order."""
+        with self._lock:
+            counts = sorted(self.subdomain_counts.items())
+
+        return [
+            f"http://{host}, {count}"
+            for host, count in counts
+        ]
