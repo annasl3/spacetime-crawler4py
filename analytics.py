@@ -1,6 +1,7 @@
-from urllib.parse import urldefrag, urlparse
 import json
 import os
+from threading import RLock
+from urllib.parse import urldefrag, urlparse
 
 def tokenize(text):
     """Split text into lowercase ASCII alphanumeric tokens."""
@@ -21,19 +22,36 @@ def tokenize(text):
 
 class Analytics:
     """Track statistics for unique crawled pages."""
+
     def __init__(self, save_path="analytics.json"):
         self.save_path = save_path
+        self._lock = RLock()
+        self._reset_statistics()
+        self._load()
+
+    def _reset_statistics(self):
+        """Reset the in-memory statistics."""
         self.seen_urls = set()
         self.longest_url = None
         self.longest_word_count = 0
         self.word_frequencies = {}
         self.subdomain_counts = {}
-        self._load()
 
     def record_page(self, url, tokens):
+        """Update statistics and restore saved state if writing fails."""
+        with self._lock:
+            try:
+                return self._record_page(url, tokens)
+            except OSError:
+                # Discard unsaved changes and restore the last snapshot.
+                self._reset_statistics()
+                self._load()
+                raise
+
+    def _record_page(self, url, tokens):
         """Update statistics for a new URL; return False for a repeated URL."""
         # Links to different sections of the same page count as one URL.
-        url = urldefrag(url)[0] 
+        url = urldefrag(url)[0]
 
         if url in self.seen_urls:
             return False
@@ -46,7 +64,7 @@ class Analytics:
             self.longest_url = url
             self.longest_word_count = word_count
 
-        # Keep all word counts, filter stop words when generating the report.
+        # Filter stop words only when generating the report.
         for token in tokens:
             if token in self.word_frequencies:
                 self.word_frequencies[token] += 1
@@ -67,6 +85,11 @@ class Analytics:
         return True
 
     def flush(self):
+        """Save a consistent snapshot of the shared statistics."""
+        with self._lock:
+            self._save()
+
+    def _save(self):
         """Save all statistics as one JSON snapshot."""
         data = {
             "seen_urls": list(self.seen_urls),
