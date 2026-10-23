@@ -62,6 +62,8 @@ class Analytics:
             else:
                 self.subdomain_counts[host] = 1
 
+        # Save before the worker marks this page as complete.
+        self.flush()
         return True
 
     def flush(self):
