@@ -3,6 +3,7 @@ from urllib.robotparser import RobotFileParser
 from xml.etree import ElementTree
 from urllib.parse import urldefrag
 
+
 class RobotsRules:
     """Parse robots rules already obtained through the course cache."""
 

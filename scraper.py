@@ -4,6 +4,8 @@ from urllib.parse import urlparse, urljoin, urldefrag, parse_qs
 from bs4 import BeautifulSoup
 from analytics import Analytics, tokenize
 from collections import Counter
+from similarity import DuplicateDetector
+from threading import Lock
 
 ALLOWED_DOMAINS = ("ics.uci.edu", "cs.uci.edu", 
                    "informatics.uci.edu", "stat.uci.edu")
@@ -36,6 +38,9 @@ MAX_QUERY_PARAMS = 6
 
 analytics = Analytics()
 atexit.register(analytics.flush)
+# All worker threads share one detector and one lock.
+duplicate_detector = DuplicateDetector(threshold=3)
+duplicate_lock = Lock()
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -88,7 +93,15 @@ def extract_next_links(url, resp):
         return []
     if len(raw.content) > LARGE_PAGE_BYTES and len(tokens) < LARGE_PAGE_MIN_WORDS:
         return []
+    
+    # Check and record atomically across worker threads.
+    # Analytics has already counted this URL before similarity filtering.
+    with duplicate_lock:
+        duplicate = duplicate_detector.is_duplicate(final_url, tokens)
 
+    if duplicate:
+        return []
+    
     return links
 
 def _collect_links(soup, base_url):
