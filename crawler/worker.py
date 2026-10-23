@@ -20,15 +20,47 @@ class Worker(Thread):
     def run(self):
         while True:
             tbd_url = self.frontier.get_tbd_url()
-            if not tbd_url:
+            if tbd_url is None:
                 self.logger.info("Frontier is empty. Stopping Crawler.")
                 break
-            resp = download(tbd_url, self.config, self.logger)
-            self.logger.info(
-                f"Downloaded {tbd_url}, status <{resp.status}>, "
-                f"using cache {self.config.cache_server}.")
-            scraped_urls = scraper.scraper(tbd_url, resp)
-            for scraped_url in scraped_urls:
-                self.frontier.add_url(scraped_url)
-            self.frontier.mark_url_complete(tbd_url)
-            time.sleep(self.config.time_delay)
+
+            try:
+                resp, sitemap_pages = self.frontier.policy.fetch_page(
+                    tbd_url
+                )
+
+                for page_url in sitemap_pages:
+                    self.frontier.add_url(page_url)
+
+                if resp is None:
+                    # Leave it incomplete on disk so a later run can retry.
+                    self.logger.info(
+                        "Not fetched; blocked or unavailable: %s",
+                        tbd_url,
+                    )
+                    continue
+
+                self.logger.info(
+                    "Downloaded %s, status <%s>, using cache %s.",
+                    tbd_url,
+                    resp.status,
+                    self.config.cache_server,
+                )
+
+                for scraped_url in scraper.scraper(tbd_url, resp):
+                    self.frontier.add_url(scraped_url)
+
+                self.frontier.mark_url_complete(tbd_url)
+
+            except Exception:
+                self.logger.exception(
+                    "Error processing %s", tbd_url
+                )
+
+            finally:
+                # Yimeng's frontier reserves a domain until released.
+                release = getattr(
+                    self.frontier, "release_domain", None
+                )
+                if release is not None:
+                    release(tbd_url)

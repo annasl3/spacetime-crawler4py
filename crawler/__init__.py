@@ -1,12 +1,17 @@
 from utils import get_logger
 from crawler.frontier import Frontier
 from crawler.worker import Worker
+from crawl_policy import CrawlPolicy
+from utils.download import download
+from scraper import is_valid
 
 class Crawler(object):
     def __init__(self, config, restart, frontier_factory=Frontier, worker_factory=Worker):
         self.config = config
         self.logger = get_logger("CRAWLER")
         self.frontier = frontier_factory(config, restart)
+# Every worker must use this same policy instance.
+        self.frontier.policy = CrawlPolicy(config,lambda url: download(url, config, self.logger),is_valid,)        
         self.workers = list()
         self.worker_factory = worker_factory
 
