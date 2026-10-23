@@ -128,15 +128,20 @@ class CrawlPolicy:
             return cached[1]
 
         robots_url = origin + "/robots.txt"
-        response = self._download(robots_url)
-        status = getattr(response, "status", None)
         lifetime = 3600
 
-        if status == 404:
-            text = ""  # No robots file: allow access.
-        elif status in (401, 403):
-            text = "User-agent: *\nDisallow: /"
-        else:
+        for attempt in range(3):
+            response = self._download(robots_url)
+            status = getattr(response, "status", None)
+
+            if status == 404:
+                text = ""  # No robots file: allow access.
+                break
+
+            if status in (401, 403):
+                text = "User-agent: *\nDisallow: /"
+                break
+
             content = self._body(
                 response,
                 robots_url,
@@ -145,12 +150,22 @@ class CrawlPolicy:
             )
             if content is not None:
                 text = content.decode("utf-8-sig", errors="replace")
+                break
+
+            if attempt < 2:
+                self.logger.warning(
+                    "Robots unavailable for %s; "
+                    "attempt %d/3 failed, retrying in 60 seconds",
+                    origin,
+                    attempt + 1,
+                )
+                time.sleep(60)
             else:
-                # Temporarily deny on server/cache failures.
                 text = "User-agent: *\nDisallow: /"
                 lifetime = 60
                 self.logger.warning(
-                    "Robots unavailable for %s; deny for 60 seconds",
+                    "Robots unavailable for %s after 3 attempts; "
+                    "deny for 60 seconds",
                     origin,
                 )
 
@@ -244,4 +259,15 @@ class CrawlPolicy:
                 return None, []
 
             pages = self._sitemap_pages(origin, rules)
-            return self._download(url), pages
+            response = self._download(url)
+
+            # Reject redirected content outside the allowed domains.
+            if response is not None and response.raw_response is not None:
+                final_url = response.raw_response.url or url
+                if not self._in_scope(final_url):
+                    self.logger.info(
+                        "Final URL outside allowed scope: %s", final_url
+                    )
+                    return None, pages
+
+            return response, pages
