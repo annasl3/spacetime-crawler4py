@@ -84,8 +84,7 @@ def extract_next_links(url, resp):
     tokens = tokenize(soup.get_text(" ", strip=True))
 
     # record the page for the report (unique by defragmented URL)
-    if not analytics.record_page(final_url, tokens):
-        return []     # already processed (e.g. reached through a redirect)
+    analytics.record_page(final_url, tokens)
 
     # low information value: too few words, or a big file with little text.
     # the page is still recorded above, but we don't follow its links.
