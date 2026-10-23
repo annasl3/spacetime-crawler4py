@@ -21,7 +21,7 @@ def tokenize(text):
     return tokens
 
 def load_stop_words(path):
-    """Load stop words using the same tokenization rules as page text."""
+    """Load stop words using the same tokenization rules."""
     stop_words = set()
 
     with open(path, "r", encoding="utf-8") as file:
@@ -154,3 +154,22 @@ class Analytics:
             f"http://{host}, {count}"
             for host, count in counts
         ]
+
+    def report(self, stop_words):
+        """Return the required crawl statistics as plain text."""
+        with self._lock:
+            longest_url = self.longest_url or "N/A"
+
+            text = f"Unique pages: {len(self.seen_urls)}\n\n"
+            text += f"Longest page: {longest_url}\n"
+            text += f"Word count: {self.longest_word_count}\n\n"
+
+            text += "Top 50 words (excluding English stop words):\n"
+            for word, count in self.top_words(stop_words):
+                text += f"{word}, {count}\n"
+
+            text += f"\nICS subdomains: {len(self.subdomain_counts)}\n"
+            for line in self.subdomain_lines():
+                text += line + "\n"
+
+            return text
