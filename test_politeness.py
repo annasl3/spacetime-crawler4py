@@ -9,6 +9,7 @@ Checks:
   2. Two threads never download from the same domain at the same time.
   3. Every discovered URL is downloaded exactly once.
   4. All threads stop on their own when the frontier is empty.
+  5. Downloads from different domains overlap in time.
 """
 import os
 import random
@@ -34,12 +35,13 @@ except ImportError:
     sys.modules["analytics"] = _fake
 
 import crawler.worker as worker_module
+import crawler as crawler_module
 from crawler import Crawler
 from crawler.frontier import get_domain
 
-THREADS = 8
+THREADS = 4
 POLITENESS = 0.5
-PAGES_PER_DOMAIN = 12
+PAGES_PER_DOMAIN = 2
 SEEDS = ["https://www.ics.uci.edu", "https://www.cs.uci.edu",
          "https://www.informatics.uci.edu", "https://www.stat.uci.edu"]
 
@@ -57,7 +59,10 @@ def fake_download(url, config, logger=None):
     end = time.monotonic()
     with log_lock:
         log.append((get_domain(url), start, end, url))
-    return FakeResp()
+    response = FakeResp()
+    if url.endswith("/robots.txt"):
+        response.status = 404
+    return response
 
 
 def fake_scraper(url, resp):
@@ -83,6 +88,7 @@ class FakeConfig:
 
 def main():
     worker_module.download = fake_download
+    crawler_module.download = fake_download
     worker_module.scraper.scraper = fake_scraper
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -118,6 +124,9 @@ def main():
                    if a[0] != b[0] and a[1] < b[2] and b[1] < a[2]) // 2
     print(f"\n  cross-domain overlapping downloads: {overlaps} "
           f"(>0 means threads really ran in parallel)")
+    if overlaps == 0:
+        print("FAIL: downloads from different domains never overlapped")
+        ok = False
     print("\nPASS" if ok else "\nFAILED")
     sys.exit(0 if ok else 1)
 

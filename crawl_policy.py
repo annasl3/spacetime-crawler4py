@@ -20,15 +20,18 @@ MAX_SITEMAPS = 10
 
 
 class CrawlPolicy:
-    """Share robots rules and a conservative download gate."""
+    """Share robots rules and serialize requests per assignment domain."""
 
     def __init__(self, config, fetch, valid_page):
         self.config = config
         self.fetch = fetch
         self.valid_page = valid_page
-        self.lock = Lock()
-        self.delay = max(0.5, config.time_delay)
-        self.last_finished = None
+        self.locks = {domain: Lock() for domain in ALLOWED_DOMAINS}
+        self.delays = {
+            domain: max(0.5, config.time_delay)
+            for domain in ALLOWED_DOMAINS
+        }
+        self.last_finished = {}
         self.rules = {}
         self.sitemaps_done = set()
         self.logger = logging.getLogger("CRAWL_POLICY")
@@ -37,6 +40,15 @@ class CrawlPolicy:
     def _origin(url):
         parsed = urlsplit(url)
         return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+    @staticmethod
+    def _domain_key(url):
+        """Group subdomains under the four assignment domains."""
+        host = (urlsplit(url).hostname or "").lower()
+        for domain in ALLOWED_DOMAINS:
+            if host == domain or host.endswith("." + domain):
+                return domain
+        raise ValueError("URL is outside the allowed domains")
 
     @staticmethod
     def _in_scope(url):
@@ -65,10 +77,12 @@ class CrawlPolicy:
             return False
 
     def _download(self, url):
-        """Called only while holding the shared policy lock."""
-        if self.last_finished is not None:
-            remaining = self.delay - (
-                time.monotonic() - self.last_finished
+        """Called while holding this domain group's lock."""
+        domain = self._domain_key(url)
+        previous = self.last_finished.get(domain)
+        if previous is not None:
+            remaining = self.delays[domain] - (
+                time.monotonic() - previous
             )
             if remaining > 0:
                 time.sleep(remaining)
@@ -79,7 +93,7 @@ class CrawlPolicy:
             self.logger.exception("Download failed: %s", url)
             return None
         finally:
-            self.last_finished = time.monotonic()
+            self.last_finished[domain] = time.monotonic()
 
     def _body(self, response, requested_url, limit=MAX_BYTES):
         if response is None or response.status != 200:
@@ -134,7 +148,8 @@ class CrawlPolicy:
         rules = RobotsRules(robots_url, text)
         declared_delay = rules.crawl_delay(self.config.user_agent)
         if declared_delay is not None:
-            self.delay = max(self.delay, declared_delay)
+            domain = self._domain_key(origin)
+            self.delays[domain] = max(self.delays[domain], declared_delay)
 
         self.rules[origin] = (
             time.monotonic() + lifetime,
@@ -210,7 +225,8 @@ class CrawlPolicy:
         if not self._in_scope(url) or not self.valid_page(url):
             return None, []
 
-        with self.lock:
+        domain = self._domain_key(url)
+        with self.locks[domain]:
             origin = self._origin(url)
             rules = self._get_rules(origin)
 
