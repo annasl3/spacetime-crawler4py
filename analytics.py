@@ -1,4 +1,6 @@
 from urllib.parse import urldefrag, urlparse
+import json
+import os
 
 def tokenize(text):
     """Split text into lowercase ASCII alphanumeric tokens."""
@@ -19,7 +21,8 @@ def tokenize(text):
 
 class Analytics:
     """Track statistics for unique crawled pages."""
-    def __init__(self):
+    def __init__(self, save_path="analytics.json"):
+        self.save_path = save_path
         self.seen_urls = set()
         self.longest_url = None
         self.longest_word_count = 0
@@ -59,3 +62,20 @@ class Analytics:
                 self.subdomain_counts[host] = 1
 
         return True
+
+    def flush(self):
+        """Save all statistics as one JSON snapshot."""
+        data = {
+            "seen_urls": list(self.seen_urls),
+            "longest_url": self.longest_url,
+            "longest_word_count": self.longest_word_count,
+            "word_frequencies": self.word_frequencies,
+            "subdomain_counts": self.subdomain_counts,
+        }
+
+        # Write a complete temporary file before replacing the old snapshot.
+        temporary_path = self.save_path + ".tmp"
+        with open(temporary_path, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=2)
+
+        os.replace(temporary_path, self.save_path)
