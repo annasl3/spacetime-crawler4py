@@ -28,6 +28,7 @@ class Analytics:
         self.longest_word_count = 0
         self.word_frequencies = {}
         self.subdomain_counts = {}
+        self._load()
 
     def record_page(self, url, tokens):
         """Update statistics for a new URL; return False for a repeated URL."""
@@ -79,3 +80,17 @@ class Analytics:
             json.dump(data, file, indent=2)
 
         os.replace(temporary_path, self.save_path)
+
+    def _load(self):
+        """Restore statistics from an existing JSON snapshot."""
+        if not os.path.exists(self.save_path):
+            return
+
+        with open(self.save_path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+
+        self.seen_urls = set(data["seen_urls"])
+        self.longest_url = data["longest_url"]
+        self.longest_word_count = data["longest_word_count"]
+        self.word_frequencies = data["word_frequencies"]
+        self.subdomain_counts = data["subdomain_counts"]
