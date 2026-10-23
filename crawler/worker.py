@@ -19,6 +19,7 @@ class Worker(Thread):
         
     def run(self):
         while True:
+            # Waits until some domain is free and rested. That domain is now ours.
             tbd_url = self.frontier.get_tbd_url()
             if tbd_url is None:
                 self.logger.info("Frontier is empty. Stopping Crawler.")
@@ -58,9 +59,5 @@ class Worker(Thread):
                 )
 
             finally:
-                # Yimeng's frontier reserves a domain until released.
-                release = getattr(
-                    self.frontier, "release_domain", None
-                )
-                if release is not None:
-                    release(tbd_url)
+                # Always release the reserved domain, including on failure.
+                self.frontier.release_domain(tbd_url)
