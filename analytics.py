@@ -20,6 +20,19 @@ def tokenize(text):
 
     return tokens
 
+def load_stop_words(path):
+    """Load stop words using the same tokenization rules as page text."""
+    stop_words = set()
+
+    with open(path, "r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            stop_words.update(tokenize(line))
+
+    return stop_words
+
 class Analytics:
     """Track statistics for unique crawled pages."""
 
