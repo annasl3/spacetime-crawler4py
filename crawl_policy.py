@@ -95,7 +95,7 @@ class CrawlPolicy:
         finally:
             self.last_finished[domain] = time.monotonic()
 
-    def _body(self, response, requested_url, limit=MAX_BYTES):
+    def _body(self, response, requested_url, limit=MAX_BYTES, allow_cross_origin=False):
         if response is None or response.status != 200:
             return None
 
@@ -105,10 +105,14 @@ class CrawlPolicy:
 
         final_url = raw.url or requested_url
 
-        # Metadata redirected to another origin requires its own policy.
+        # Keep redirected responses within the allowed domains.
+        if not self._in_scope(final_url):
+            return None
+
+        # Allow a different origin only when explicitly requested.
         if (
-            not self._in_scope(final_url)
-            or self._origin(final_url) != self._origin(requested_url)
+            not allow_cross_origin
+            and self._origin(final_url) != self._origin(requested_url)
         ):
             return None
 
@@ -133,7 +137,12 @@ class CrawlPolicy:
         elif status in (401, 403):
             text = "User-agent: *\nDisallow: /"
         else:
-            content = self._body(response, robots_url, 512 * 1024)
+            content = self._body(
+                response,
+                robots_url,
+                512 * 1024,
+                allow_cross_origin=True,
+            )
             if content is not None:
                 text = content.decode("utf-8-sig", errors="replace")
             else:
