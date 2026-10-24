@@ -22,17 +22,15 @@ import types
 # utils/download.py imports cbor; stub it so this test runs without it.
 sys.modules.setdefault("cbor", types.ModuleType("cbor"))
 
-# analytics.py (teammate's file) may not be here yet; use a dummy if missing.
-try:
-    import analytics
-except ImportError:
-    class _Dummy:
-        def __init__(self, *a, **k): pass
-        def __getattr__(self, name): return lambda *a, **k: None
-    _fake = types.ModuleType("analytics")
-    _fake.Analytics = _Dummy
-    _fake.tokenize = lambda *a, **k: []
-    sys.modules["analytics"] = _fake
+# This scheduling test uses fake analytics to avoid writing real statistics.
+class DummyAnalytics:
+    def flush(self):
+        pass
+
+fake_analytics = types.ModuleType("analytics")
+fake_analytics.Analytics = DummyAnalytics
+fake_analytics.tokenize = lambda text: []
+sys.modules["analytics"] = fake_analytics
 
 import crawler.worker as worker_module
 import crawler as crawler_module
@@ -51,6 +49,7 @@ log_lock = threading.Lock()
 
 class FakeResp:
     status = 200
+    raw_response = None
 
 
 def fake_download(url, config, logger=None):
@@ -97,8 +96,21 @@ def main():
         t0 = time.monotonic()
         crawler.start()            # returns only when every thread has exited
         elapsed = time.monotonic() - t0
+        completed_pages = sum(
+            1 for _, completed in crawler.frontier.save.values()
+            if completed
+        )
+        crawler.frontier.save.close()
 
     ok = True
+    expected_pages = len(SEEDS) * (1 + 2 * PAGES_PER_DOMAIN)
+    if completed_pages != expected_pages:
+        print(
+            f"FAIL: completed {completed_pages} pages, "
+            f"expected {expected_pages}"
+        )
+        ok = False
+
     by_domain = {}
     for domain, s, e, url in log:
         by_domain.setdefault(domain, []).append((s, e, url))

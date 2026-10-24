@@ -185,7 +185,6 @@ class CrawlPolicy:
         if origin in self.sitemaps_done:
             return []
 
-        self.sitemaps_done.add(origin)
         pending = list(rules.sitemap_urls())
         visited = set()
         pages = set()
@@ -205,9 +204,24 @@ class CrawlPolicy:
             if not rules.can_fetch(self.config.user_agent, url):
                 continue
 
-            response = self._download(url)
-            content = self._body(response, url)
+            for attempt in range(3):
+                response = self._download(url)
+                content = self._body(response, url)
+                if content is not None:
+                    break
+
+                if getattr(response, "status", None) in (401, 403, 404):
+                    break
+
+                if attempt < 2:
+                    self.logger.warning(
+                        "Sitemap unavailable: %s; retrying in 5 seconds",
+                        url,
+                    )
+                    time.sleep(5)
+
             if content is None:
+                self.logger.warning("Skipping unavailable sitemap: %s", url)
                 continue
 
             # Bound decompression output as well as compressed input.
@@ -242,6 +256,7 @@ class CrawlPolicy:
                 "Sitemap limit reached for %s", origin
             )
 
+        self.sitemaps_done.add(origin)
         return sorted(pages)
 
     def fetch_page(self, url):
@@ -261,13 +276,27 @@ class CrawlPolicy:
             pages = self._sitemap_pages(origin, rules)
             response = self._download(url)
 
-            # Reject redirected content outside the allowed domains.
-            if response is not None and response.raw_response is not None:
-                final_url = response.raw_response.url or url
-                if not self._in_scope(final_url):
-                    self.logger.info(
-                        "Final URL outside allowed scope: %s", final_url
-                    )
-                    return None, pages
-
+        # The original domain lock has been released.
+        if response is None or response.raw_response is None:
             return response, pages
+
+        final_url = response.raw_response.url or url
+        if not self._in_scope(final_url):
+            self.logger.info(
+                "Final URL outside allowed scope: %s", final_url
+            )
+            return None, pages
+
+        final_origin = self._origin(final_url)
+        if final_origin == origin:
+            final_rules = rules
+        else:
+            final_domain = self._domain_key(final_url)
+            with self.locks[final_domain]:
+                final_rules = self._get_rules(final_origin)
+
+        if not final_rules.can_fetch(self.config.user_agent, final_url):
+            self.logger.info("Robots blocked final URL: %s", final_url)
+            return None, pages
+
+        return response, pages
